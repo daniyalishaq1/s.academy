@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChapterTitle = "";
     let completedChapters = [];
     let currentView = 'toc';
+    let hasStartedAnyChapter = false; // Track if user has started any chapter
     
     // Separate chat storage for each chapter/section
     let chatHistory = {
@@ -121,6 +122,19 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update current chapter title in header
         document.getElementById('current-chapter-title').textContent = 
             newView === 'toc' ? "Hylee's Intro to Multifamily" : sectionTitle;
+        
+        // Set appropriate bot state and quick actions for TOC
+        if (newView === 'toc') {
+            if (hasStartedAnyChapter) {
+                // User has started course before - allow direct chapter access
+                botState = 'TOC_NAVIGATION';
+                renderQuickActions(['Continue where I left off', 'Restart from beginning']);
+            } else {
+                // First time - show start course actions
+                botState = 'AWAITING_COURSE_START';
+                renderQuickActions(QUICK_ACTIONS.START);
+            }
+        }
     }
 
     // --- Sidebar Management ---
@@ -179,8 +193,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentView !== 'toc') {
             tocItem.addEventListener('click', () => {
                 switchToView('toc');
-                botState = 'AWAITING_COURSE_START';
-                renderQuickActions(QUICK_ACTIONS.START);
             });
         }
 
@@ -372,28 +384,27 @@ document.addEventListener('DOMContentLoaded', () => {
         enableQuickActions();
     }
 
-    // --- UPDATED: No loading bar for quick actions generation ---
+    // --- UPDATED: Generate only unique quick actions ---
     async function generateContextualActions(sectionContent) {
         try {
-            // Removed showLoadingBar() - no loading indicator for quick actions
             const response = await fetch(`${API_BASE_URL}/generate-quick-actions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ section_content: sectionContent })
             });
-            // Removed hideLoadingBar() - not needed
             
             if (!response.ok) throw new Error("Quick actions generation failed");
             const data = await response.json();
             return data.actions;
         } catch (error) {
             console.error('Quick actions generation error:', error);
-            return ['Elaborate this more', 'Give me examples', 'Explain further'];
+            return ['What does this mean?', 'Give me examples', 'How is this used?'];
         }
     }
 
     async function renderDynamicQuickActions(sectionContent) {
         const dynamicActions = await generateContextualActions(sectionContent);
+        // Always include "Move to next section" as first action, then add AI-generated ones
         const allActions = ['Move to next section', ...dynamicActions];
         
         console.log('🎯 Generated dynamic actions:', allActions);
@@ -475,11 +486,15 @@ document.addEventListener('DOMContentLoaded', () => {
     async function askAI(question) {
         showLoadingBar();
         try {
-            const context = (botState === 'AWAITING_COURSE_START') ? tableOfContents : currentChapterContent;
+            const context = (botState === 'AWAITING_COURSE_START' || botState === 'TOC_NAVIGATION') ? tableOfContents : currentChapterContent;
             const response = await fetch(`${API_BASE_URL}/ask-question-stream`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question, context })
+                body: JSON.stringify({ 
+                    question, 
+                    context,
+                    current_chapter_title: currentChapterTitle
+                })
             });
             
             if (!response.ok) {
@@ -513,12 +528,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Streaming complete - render quick actions
                             if (botState === 'AWAITING_COURSE_START') {
                                 renderQuickActions(QUICK_ACTIONS.START);
+                            } else if (botState === 'TOC_NAVIGATION') {
+                                renderQuickActions(['Continue where I left off', 'Restart from beginning']);
                             } else if (botState === 'AWAITING_NEXT_SECTION') {
                                 const currentSection = chapterSections[currentSectionIndex];
                                 if (currentSection) {
                                     renderDynamicQuickActions(currentSection.content);
                                 } else {
-                                    renderQuickActions(['Move to next section', 'Elaborate this more']);
+                                    renderQuickActions(['Move to next section', 'What does this mean?']);
                                 }
                             }
                             return;
@@ -646,6 +663,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function startChapter(title) {
+        // Mark that user has started a chapter
+        hasStartedAnyChapter = true;
+        
         // Switch to chapter view
         switchToView(title, title);
         updateCurrentChapterTitle(title);
@@ -702,6 +722,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (botState === 'AWAITING_COURSE_START') {
             const startKeywords = ['yes', 'start', 'begin', 'continue', 'proceed', 'ok', 'sure'];
             if (startKeywords.some(keyword => lowerCaseText.includes(keyword))) {
+                startChapter(firstChapterTitle);
+                return;
+            } else {
+                askAI(userText);
+                return;
+            }
+        }
+        
+        if (botState === 'TOC_NAVIGATION') {
+            if (lowerCaseText.includes('continue') && lowerCaseText.includes('left off')) {
+                // Find the most recently started chapter
+                if (currentChapterTitle && chatHistory[currentChapterTitle] && chatHistory[currentChapterTitle].length > 0) {
+                    startChapter(currentChapterTitle);
+                } else {
+                    startChapter(firstChapterTitle);
+                }
+                return;
+            } else if (lowerCaseText.includes('restart') && lowerCaseText.includes('beginning')) {
+                hasStartedAnyChapter = false;
+                currentChapterTitle = "";
+                completedChapters = [];
                 startChapter(firstChapterTitle);
                 return;
             } else {
