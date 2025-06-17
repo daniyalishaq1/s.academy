@@ -220,6 +220,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const isUnlocked = !chapter.locked || isCompleted;
             const progress = calculateChapterProgress(chapter.title);
 
+            // If chapter is completed, hide the action buttons
+            if (isCompleted) {
+                chapterItem.classList.add('completed');
+                return; // Skip rendering action buttons for completed chapters
+            }
+
             if (isCurrent) {
                 chapterItem.classList.add('current');
             } else if (isUnlocked) {
@@ -345,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         return messageBubble;
     }
-    
+
     // --- UPDATED: Faster typing for Notion content ---
     function typewriterDisplay(messageBubble, markdownContent, onCompleteCallback, isNotionContent = false) {
         const lines = markdownContent.split('\n');
@@ -419,10 +425,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentChapter = allChapters.find(ch => ch.title === currentChapterTitle);
         const nextChapter = allChapters.find(ch => !ch.locked && !completedChapters.includes(ch.title) && ch.title !== currentChapterTitle);
 
-        // Show quick actions for completed chapters
+        // If chapter is completed, hide quick actions
         if (completedChapters.includes(currentChapterTitle)) {
-            const actions = ['Restart this chapter', 'Go to next chapter'];
-            renderQuickActions(actions);
+            renderQuickActions([]); // No actions
         } else {
             const dynamicActions = await generateContextualActions(sectionContent);
             const allActions = ['Move to next section', ...dynamicActions];
