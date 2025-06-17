@@ -6,7 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingBar = document.getElementById('loading-bar');
 
     // --- API BASE URL CONFIGURATION ---
-    // Automatically detects if running locally or in production
     const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
         ? 'http://127.0.0.1:5000' 
         : window.location.origin;
@@ -220,11 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const isUnlocked = !chapter.locked || isCompleted;
             const progress = calculateChapterProgress(chapter.title);
 
-            // If chapter is completed, show it in the sidebar but don't render quick actions for it
-            if (isCompleted) {
-                chapterItem.classList.add('completed');
-            }
-
             if (isCurrent) {
                 chapterItem.classList.add('current');
             } else if (isUnlocked) {
@@ -278,8 +272,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chapterItem.appendChild(icon);
             chapterItem.appendChild(chapterContent);
 
-            // Add click handler for unlocked chapters
-            if (isUnlocked && !isCurrent && !isCompleted) {
+            // If the chapter is not completed, allow click to start it
+            if (!isCompleted && isUnlocked && !isCurrent) {
                 chapterItem.addEventListener('click', () => {
                     startChapter(chapter.title);
                 });
