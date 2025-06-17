@@ -220,10 +220,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const isUnlocked = !chapter.locked || isCompleted;
             const progress = calculateChapterProgress(chapter.title);
 
-            // If chapter is completed, hide the action buttons
+            // If chapter is completed, show it in the sidebar but don't render quick actions for it
             if (isCompleted) {
                 chapterItem.classList.add('completed');
-                return; // Skip rendering action buttons for completed chapters
             }
 
             if (isCurrent) {
@@ -280,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chapterItem.appendChild(chapterContent);
 
             // Add click handler for unlocked chapters
-            if (isUnlocked && !isCurrent) {
+            if (isUnlocked && !isCurrent && !isCompleted) {
                 chapterItem.addEventListener('click', () => {
                     startChapter(chapter.title);
                 });
