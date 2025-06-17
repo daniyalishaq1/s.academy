@@ -5,13 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const quickActionsContainer = document.getElementById('quick-actions-container');
     const loadingBar = document.getElementById('loading-bar');
 
-    // --- API BASE URL CONFIGURATION ---
-    const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-        ? 'http://127.0.0.1:5000' 
-        : window.location.origin;
-
-    console.log('🌐 API Base URL:', API_BASE_URL);
-
     let botState = 'LOADING';
     let chapterSections = [];
     let currentSectionIndex = 0;
@@ -23,7 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChapterTitle = "";
     let completedChapters = [];
     let currentView = 'toc';
-    let hasStartedAnyChapter = false; // Track if user has started any chapter
     
     // Separate chat storage for each chapter/section
     let chatHistory = {
@@ -35,6 +27,19 @@ document.addEventListener('DOMContentLoaded', () => {
         IN_PROGRESS: ['Move to next section'],
         END_OF_CHAPTER: ['Move to next Chapter', 'Restart the course']
     };
+
+    // --- API URL Detection ---
+    function getApiUrl() {
+        // Auto-detect if we're in development or production
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            return 'http://127.0.0.1:5000';
+        } else {
+            // Production - use relative URLs (same domain)
+            return '';
+        }
+    }
+    
+    const API_BASE_URL = getApiUrl();
 
     // --- Loading Screen Functions ---
     function showFullScreenLoader() {
@@ -78,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- FIXED: Chat History Management for Each Chapter ---
+    // --- Chat History Management ---
     function saveChatToHistory(view) {
         if (chatHistory[view]) {
             chatHistory[view] = Array.from(chatMessages.children).map(row => ({
@@ -87,45 +92,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 type: row.querySelector('.notion-content') ? 'notion' : 
                       row.querySelector('.ai-response') ? 'ai' : 'default'
             }));
-            console.log(`💾 Saved chat for ${view}:`, chatHistory[view].length, 'messages');
         }
     }
 
     function loadChatFromHistory(view) {
         chatMessages.innerHTML = '';
         if (chatHistory[view] && chatHistory[view].length > 0) {
-            console.log(`📖 Loading chat for ${view}:`, chatHistory[view].length, 'messages');
             chatHistory[view].forEach(message => {
                 chatMessages.innerHTML += message.html;
             });
             chatWindow.scrollTop = chatWindow.scrollHeight;
-        } else {
-            console.log(`📖 No chat history found for ${view}`);
         }
     }
 
     function switchToView(newView, sectionTitle = '') {
-        console.log(`🔄 Switching from ${currentView} to ${newView}`);
-        
-        // Save current chat only if we have messages
-        if (chatMessages.children.length > 0) {
-            saveChatToHistory(currentView);
-        }
+        // Save current chat
+        saveChatToHistory(currentView);
         
         // Switch to new view
-        const previousView = currentView;
         currentView = newView;
         
         // Initialize chat history for new view if it doesn't exist
         if (!chatHistory[newView]) {
             chatHistory[newView] = [];
-            console.log(`🆕 Created new chat history for ${newView}`);
         }
         
-        // Only load chat if we're switching to a different view
-        if (previousView !== newView) {
-            loadChatFromHistory(newView);
-        }
+        // Load chat for new view
+        loadChatFromHistory(newView);
         
         // Update banner
         updateBanner(newView === 'toc' ? 'toc' : 'chapter', sectionTitle);
@@ -133,19 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update current chapter title in header
         document.getElementById('current-chapter-title').textContent = 
             newView === 'toc' ? "Hylee's Intro to Multifamily" : sectionTitle;
-        
-        // Set appropriate bot state and quick actions for TOC
-        if (newView === 'toc') {
-            if (hasStartedAnyChapter) {
-                // User has started course before - allow direct chapter access
-                botState = 'TOC_NAVIGATION';
-                renderQuickActions(['Continue where I left off', 'Restart from beginning']);
-            } else {
-                // First time - show start course actions
-                botState = 'AWAITING_COURSE_START';
-                renderQuickActions(QUICK_ACTIONS.START);
-            }
-        }
     }
 
     // --- Sidebar Management ---
@@ -204,6 +184,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentView !== 'toc') {
             tocItem.addEventListener('click', () => {
                 switchToView('toc');
+                botState = 'AWAITING_COURSE_START';
+                renderQuickActions(QUICK_ACTIONS.START);
             });
         }
 
@@ -272,8 +254,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chapterItem.appendChild(icon);
             chapterItem.appendChild(chapterContent);
 
-            // If the chapter is not completed, allow click to start it
-            if (!isCompleted && isUnlocked && !isCurrent) {
+            // Add click handler for unlocked chapters
+            if (isUnlocked && !isCurrent) {
                 chapterItem.addEventListener('click', () => {
                     startChapter(chapter.title);
                 });
@@ -344,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         return messageBubble;
     }
-
+    
     // --- UPDATED: Faster typing for Notion content ---
     function typewriterDisplay(messageBubble, markdownContent, onCompleteCallback, isNotionContent = false) {
         const lines = markdownContent.split('\n');
@@ -385,7 +367,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderQuickActions(actionSet) {
         quickActionsContainer.innerHTML = '';
         if (!actionSet || actionSet.length === 0) return;
-        actionSet.forEach(actionText => {
+        
+        // Limit to maximum 4 actions
+        const limitedActions = actionSet.slice(0, 4);
+        
+        limitedActions.forEach(actionText => {
             const button = document.createElement('button');
             button.classList.add('quick-action-btn');
             button.textContent = actionText;
@@ -395,37 +381,40 @@ document.addEventListener('DOMContentLoaded', () => {
         enableQuickActions();
     }
 
-    // --- UPDATED: Generate content-specific quick actions ---
+    // --- UPDATED: No loading bar for quick actions generation ---
     async function generateContextualActions(sectionContent) {
         try {
+            // Removed showLoadingBar() - no loading indicator for quick actions
             const response = await fetch(`${API_BASE_URL}/generate-quick-actions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ section_content: sectionContent })
             });
+            // Removed hideLoadingBar() - not needed
             
             if (!response.ok) throw new Error("Quick actions generation failed");
             const data = await response.json();
-            console.log('🎯 Generated actions from server:', data.actions);
             return data.actions;
         } catch (error) {
             console.error('Quick actions generation error:', error);
-            return ['What does this mean?', 'Give me examples', 'How is this used?'];
+            return ['What is the main topic?', 'How does this work?', 'What are the steps?'];
         }
     }
 
     async function renderDynamicQuickActions(sectionContent) {
-        const currentChapter = allChapters.find(ch => ch.title === currentChapterTitle);
-        const nextChapter = allChapters.find(ch => !ch.locked && !completedChapters.includes(ch.title) && ch.title !== currentChapterTitle);
-
-        // If chapter is completed, hide quick actions
+        // *** NEW: Don't show quick actions if current chapter is completed ***
         if (completedChapters.includes(currentChapterTitle)) {
-            renderQuickActions([]); // No actions
-        } else {
-            const dynamicActions = await generateContextualActions(sectionContent);
-            const allActions = ['Move to next section', ...dynamicActions];
-            renderQuickActions(allActions);
+            console.log('🚫 Chapter completed - not showing quick actions');
+            quickActionsContainer.innerHTML = '';
+            return;
         }
+
+        const dynamicActions = await generateContextualActions(sectionContent);
+        // Ensure "Move to next section" is first, then add up to 3 more dynamic actions
+        const allActions = ['Move to next section', ...dynamicActions.slice(0, 3)];
+        
+        console.log('🎯 Generated dynamic actions:', allActions);
+        renderQuickActions(allActions);
     }
 
     function checkContinueKeywords(text) {
@@ -503,14 +492,14 @@ document.addEventListener('DOMContentLoaded', () => {
     async function askAI(question) {
         showLoadingBar();
         try {
-            const context = (botState === 'AWAITING_COURSE_START' || botState === 'TOC_NAVIGATION') ? tableOfContents : currentChapterContent;
+            const context = (botState === 'AWAITING_COURSE_START') ? tableOfContents : currentChapterContent;
             const response = await fetch(`${API_BASE_URL}/ask-question-stream`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     question, 
                     context,
-                    current_chapter_title: currentChapterTitle
+                    current_chapter_title: currentChapterTitle 
                 })
             });
             
@@ -542,17 +531,21 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Ensure loading bar is completely hidden
                             forceHideLoadingBar();
                             
-                            // Streaming complete - render quick actions
+                            // *** UPDATED: Don't render quick actions if chapter is completed ***
+                            if (completedChapters.includes(currentChapterTitle)) {
+                                console.log('🚫 Chapter completed - not showing quick actions after AI response');
+                                return;
+                            }
+                            
+                            // Streaming complete - render quick actions only if chapter not completed
                             if (botState === 'AWAITING_COURSE_START') {
                                 renderQuickActions(QUICK_ACTIONS.START);
-                            } else if (botState === 'TOC_NAVIGATION') {
-                                renderQuickActions(['Continue where I left off', 'Restart from beginning']);
                             } else if (botState === 'AWAITING_NEXT_SECTION') {
                                 const currentSection = chapterSections[currentSectionIndex];
                                 if (currentSection) {
                                     renderDynamicQuickActions(currentSection.content);
                                 } else {
-                                    renderQuickActions(['Move to next section', 'What does this mean?']);
+                                    renderQuickActions(['Move to next section']);
                                 }
                             }
                             return;
@@ -581,7 +574,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             forceHideLoadingBar(); // Force hide on any error
             createMessageElement('bot', 'ai').innerHTML = "Sorry, I had trouble thinking of an answer.";
-            enableQuickActions();
+            
+            // *** UPDATED: Don't show quick actions if chapter is completed ***
+            if (!completedChapters.includes(currentChapterTitle)) {
+                enableQuickActions();
+            }
         }
     }
 
@@ -601,7 +598,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const promptBubble = createMessageElement('bot', 'notion');
                 typewriterDisplay(promptBubble, polishedPrompt, () => {
-                    renderDynamicQuickActions(currentSection.content);
+                    // *** UPDATED: Don't show quick actions if chapter is completed ***
+                    if (!completedChapters.includes(currentChapterTitle)) {
+                        renderDynamicQuickActions(currentSection.content);
+                    }
                 }, true); // Mark as Notion content for faster typing
             }
         } else {
@@ -624,6 +624,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 allChapters = data.unlockedChapters;
                 completedChapters.push(currentChapterTitle);
                 renderChaptersList();
+                
+                // *** UPDATED: Clear quick actions when chapter is completed ***
+                quickActionsContainer.innerHTML = '';
                 
                 const congratsBubble = createMessageElement('bot', 'notion');
                 let congratsMessage = `🎉 Congratulations! You've completed **${currentChapterTitle}**!`;
@@ -680,19 +683,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function startChapter(title) {
-        console.log(`🚀 Starting chapter: ${title}`);
-        
-        // Mark that user has started a chapter
-        hasStartedAnyChapter = true;
-        
-        // Switch to chapter view (this will save current chat automatically)
+        // Switch to chapter view
         switchToView(title, title);
         updateCurrentChapterTitle(title);
         
-        // If this is a fresh chapter start (no chat history), load content
-        if (!chatHistory[title] || chatHistory[title].length === 0) {
-            console.log(`📖 Fresh chapter start for ${title} - loading content`);
-            
+        // If this is a fresh chapter start, load content
+        if (chatHistory[title].length === 0) {
             if (title === firstChapterTitle && firstChapterContent) {
                 console.log('🚀 Using preloaded first chapter content - instant load!');
                 currentChapterContent = firstChapterContent;
@@ -725,27 +721,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 createMessageElement('bot').innerHTML = 'Sorry, there was a problem loading the chapter.';
             }
         } else {
-            // Restore chapter state from chat history - content should already be loaded
-            console.log(`📖 Resuming chapter ${title} from chat history`);
+            // Restore chapter state from chat history
             renderChaptersList();
             
-            // If we don't have the chapter content in memory, reload it
-            if (!currentChapterContent || chapterSections.length === 0) {
-                console.log('📡 Reloading chapter content for resumed session...');
-                try {
-                    const response = await fetch(`${API_BASE_URL}/get-chapter-content`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ title }),
-                    });
-                    if (response.ok) {
-                        const data = await response.json();
-                        currentChapterContent = data.content;
-                        chapterSections = parseContentIntoSections(data.content);
-                    }
-                } catch (error) {
-                    console.error('Error reloading chapter content:', error);
-                }
+            // *** UPDATED: Don't show quick actions if this chapter is completed ***
+            if (completedChapters.includes(title)) {
+                quickActionsContainer.innerHTML = '';
+                console.log('🚫 Chapter already completed - no quick actions');
             }
         }
     }
@@ -763,27 +745,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (botState === 'AWAITING_COURSE_START') {
             const startKeywords = ['yes', 'start', 'begin', 'continue', 'proceed', 'ok', 'sure'];
             if (startKeywords.some(keyword => lowerCaseText.includes(keyword))) {
-                startChapter(firstChapterTitle);
-                return;
-            } else {
-                askAI(userText);
-                return;
-            }
-        }
-        
-        if (botState === 'TOC_NAVIGATION') {
-            if (lowerCaseText.includes('continue') && lowerCaseText.includes('left off')) {
-                // Find the most recently started chapter
-                if (currentChapterTitle && chatHistory[currentChapterTitle] && chatHistory[currentChapterTitle].length > 0) {
-                    startChapter(currentChapterTitle);
-                } else {
-                    startChapter(firstChapterTitle);
-                }
-                return;
-            } else if (lowerCaseText.includes('restart') && lowerCaseText.includes('beginning')) {
-                hasStartedAnyChapter = false;
-                currentChapterTitle = "";
-                completedChapters = [];
                 startChapter(firstChapterTitle);
                 return;
             } else {
