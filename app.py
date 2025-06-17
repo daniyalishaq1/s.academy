@@ -169,7 +169,7 @@ Respond: CONTINUE or QUESTION
         return 'QUESTION'
 
 def generate_quick_actions(section_content):
-    """Faster quick actions with shorter content and prompt"""
+    """Generate unique quick actions without duplicates"""
     
     # Truncate content for faster processing
     max_content_length = 1000
@@ -177,46 +177,69 @@ def generate_quick_actions(section_content):
         section_content = section_content[:max_content_length] + "..."
     
     quick_actions_prompt = f"""
-Generate 3 short questions (2-4 words each) based on this content:
+Generate exactly 3 unique, different questions based on this content. Each must be different from the others.
 
-{section_content}
+Content: {section_content}
+
+Requirements:
+- Each question should be 2-4 words
+- No duplicate concepts or similar phrasing
+- Focus on different aspects: definitions, examples, applications
+- Avoid generic phrases like "elaborate more"
 
 Format:
-- Question 1
-- Question 2
-- Question 3
-
-Focus on key terms and concepts. Be concise.
+1. [First unique question]
+2. [Second unique question] 
+3. [Third unique question]
 """
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quick_actions_prompt}],
-            max_tokens=50,  # Reduced for speed
-            temperature=0.3,
+            max_tokens=60,
+            temperature=0.7,  # More creativity for variety
         )
         
         result = response.choices[0].message.content.strip()
         
-        # Quick parsing
+        # Parse the numbered format
         actions = []
         for line in result.split('\n'):
             line = line.strip()
-            if line and (line.startswith('-') or line.startswith('•')):
-                action = line.replace('-', '').replace('•', '').strip()
-                if action and len(action) <= 30:
+            # Look for numbered format or bullet points
+            if any(line.startswith(prefix) for prefix in ['1.', '2.', '3.', '-', '•']):
+                # Clean the action text
+                action = line
+                for prefix in ['1.', '2.', '3.', '-', '•']:
+                    action = action.replace(prefix, '').strip()
+                
+                # Only add if it's unique and reasonable length
+                if action and len(action) <= 40 and action not in actions:
                     actions.append(action)
         
-        # Ensure we have exactly 3 actions
-        while len(actions) < 3:
-            actions.append("Elaborate this more")
+        # Ensure we have exactly 3 unique actions
+        fallback_actions = [
+            "What does this mean?",
+            "Give me examples", 
+            "How is this used?",
+            "Why is this important?",
+            "What are the benefits?",
+            "Explain the process"
+        ]
+        
+        # Add fallbacks if we don't have enough unique actions
+        for fallback in fallback_actions:
+            if len(actions) >= 3:
+                break
+            if fallback not in actions:
+                actions.append(fallback)
         
         return actions[:3]
             
     except Exception as e:
         print(f"Quick actions generation error: {e}")
-        return ["Elaborate this more", "Give me examples", "Explain further"]
+        return ["What does this mean?", "Give me examples", "How is this used?"]
 
 # --- API Endpoints ---
 @app.route('/get-course-content', methods=['GET'])
@@ -368,8 +391,8 @@ def generate_quick_actions_endpoint():
         
     except Exception as e:
         print(f"Error in generate_quick_actions_endpoint: {e}")
-        # Safe fallback
-        return jsonify({"actions": ["Elaborate this more", "Give me examples", "Explain further"]})
+        # Safe fallback with unique actions
+        return jsonify({"actions": ["What does this mean?", "Give me examples", "How is this used?"]})
 
 @app.route('/ask-question', methods=['POST'])
 def ask_question():
@@ -377,28 +400,23 @@ def ask_question():
     data = request.get_json()
     question = data.get('question')
     context = data.get('context')
+    current_chapter_title = data.get('current_chapter_title', '')
     
     if not question or not context: 
         return jsonify({"error": "Question and context required."}), 400
 
-    # Updated system prompt for empathetic responses
+    # Updated system prompt for better responses
     system_prompt = (
         "You are Hylee, a friendly and empathetic multifamily real estate tutor. "
         "Always be warm, understanding, and helpful. "
         
         "Rules: "
         "1) Answer in 1-2 sentences max using only the provided context. "
-        "2) For future topics in the course: 'Great question! We'll actually cover [Section Name] coming up soon. I think you'll find it really valuable!' "
-        "3) For off-topic questions, be understanding and try to connect to course content when possible: "
-        "   - Acknowledge their interest: 'I understand your curiosity about [topic]' or 'That's an interesting question about [topic]' "
-        "   - Gently redirect: 'While I focus on multifamily real estate in this course' "
-        "   - Offer course-related alternative: 'I can help you with [related course topic] if that would be helpful!' "
-        "   - Examples: "
-        "     * COVID question → 'I understand your concern about COVID-19. While I focus on multifamily real estate, I can tell you about COVID's impact on the multifamily industry if that interests you!' "
-        "     * Stock market → 'That's a great financial question! While I specialize in multifamily real estate, I can share how real estate investing compares to stocks if you'd like!' "
-        "     * General health → 'I appreciate your interest in that topic. I'm here to help with multifamily real estate, but I'd be happy to discuss property management health considerations!' "
+        "2) For chapter completion time questions: Give realistic estimates based on content length (typically 10-15 minutes per chapter). "
+        "3) For off-topic questions, be understanding and try to connect to course content when possible. "
         "4) Always maintain a warm, encouraging tone. Never sound robotic or dismissive. "
-        "5) Be conversational and show genuine interest in helping them learn."
+        "5) Be conversational and show genuine interest in helping them learn. "
+        "6) Don't mention future chapters unless specifically asked about course progression."
     )
     
     # Truncate context if too long to speed up processing
@@ -406,7 +424,7 @@ def ask_question():
     if len(context) > max_context_length:
         context = context[:max_context_length] + "..."
     
-    user_message = f"Context: {context}\n\nQ: {question}"
+    user_message = f"Current Chapter: {current_chapter_title}\nContext: {context}\n\nQ: {question}"
 
     try:
         response = openai.ChatCompletion.create(
@@ -433,37 +451,32 @@ def ask_question_stream():
     data = request.get_json()
     question = data.get('question')
     context = data.get('context')
+    current_chapter_title = data.get('current_chapter_title', '')
     
     if not question or not context: 
         return jsonify({"error": "Question and context required."}), 400
 
     def generate_streaming_response():
         """Generator function for streaming OpenAI responses"""
-        # Updated system prompt with more human and empathetic responses
+        # Updated system prompt
         system_prompt = (
             "You are Hylee, a friendly and empathetic multifamily real estate tutor. "
             "Always be warm, understanding, and helpful. "
             
             "Rules: "
             "1) Answer in 1-2 sentences max using only the provided context. "
-            "2) For future topics in the course: 'Great question! We'll actually cover [Section Name] coming up soon. I think you'll find it really valuable!' "
-            "3) For off-topic questions, be understanding and try to connect to course content when possible: "
-            "   - Acknowledge their interest: 'I understand your curiosity about [topic]' or 'That's an interesting question about [topic]' "
-            "   - Gently redirect: 'While I focus on multifamily real estate in this course' "
-            "   - Offer course-related alternative: 'I can help you with [related course topic] if that would be helpful!' "
-            "   - Examples: "
-            "     * COVID question → 'I understand your concern about COVID-19. While I focus on multifamily real estate, I can tell you about COVID's impact on the multifamily industry if that interests you!' "
-            "     * Stock market → 'That's a great financial question! While I specialize in multifamily real estate, I can share how real estate investing compares to stocks if you'd like!' "
-            "     * General health → 'I appreciate your interest in that topic. I'm here to help with multifamily real estate, but I'd be happy to discuss property management health considerations!' "
+            "2) For chapter completion time questions: Give realistic estimates based on content length (typically 10-15 minutes per chapter). "
+            "3) For off-topic questions, be understanding and try to connect to course content when possible. "
             "4) Always maintain a warm, encouraging tone. Never sound robotic or dismissive. "
-            "5) Be conversational and show genuine interest in helping them learn."
+            "5) Be conversational and show genuine interest in helping them learn. "
+            "6) Don't mention future chapters unless specifically asked about course progression."
         )
         
         # Truncate context if too long
         max_context_length = 2000
         truncated_context = context[:max_context_length] + "..." if len(context) > max_context_length else context
         
-        user_message = f"Context: {truncated_context}\n\nQ: {question}"
+        user_message = f"Current Chapter: {current_chapter_title}\nContext: {truncated_context}\n\nQ: {question}"
 
         try:
             # Create streaming completion
