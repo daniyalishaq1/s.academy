@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chatbot</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <!-- Full-Screen Loading Screen -->
+    <div id="full-screen-loader">
+        <div class="loader-content">
+            <div class="mascot-container">
+                <!-- Your Mascot GIF - Replace with your actual mascot file -->
+                <img src="mascot-gif.gif" alt="Course Mascot" class="mascot-gif" />
+                <!-- Fallback pulse animation if GIF doesn't load -->
+                <div class="mascot-placeholder" style="display: none;">
+                    <div class="pulse-animation"></div>
+                </div>
+            </div>
+            <h1 class="course-title">Hylee's Intro to Multifamily</h1>
+            <p class="loader-subtitle">Your AI-Powered Course Experience</p>
+            <p id="loading-text">Initializing...</p>
+            <div class="loading-bar-container">
+                <div class="loading-bar-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Course Interface -->
+    <div id="course-interface">
+        <!-- Sidebar for Chapter Navigation -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h3>Course Progress</h3>
+                <button id="sidebar-toggle" class="sidebar-toggle">×</button>
+            </div>
+            <div class="chapters-list" id="chapters-list">
+                <!-- Chapters will be populated dynamically -->
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div id="chat-container">
+            <!-- Top bar with sidebar toggle -->
+            <div id="top-bar">
+                <button id="menu-btn" class="menu-btn">☰</button>
+                <h2 id="current-chapter-title">Hylee's Intro to Multifamily</h2>
+            </div>
+
+            <div id="chat-window">
+                <!-- Welcome Banner with Dynamic Content -->
+                <div class="welcome-banner">
+                    <img src="Chat-Banner.png" alt="Course Mascot" class="banner-mascot" />
+                    <div class="banner-content">
+                        <div class="banner-heading">Welcome aboard! You're starting your training on:</div>
+                        <div class="banner-subheading">Hylee's Intro to Multifamily</div>
+                        <div class="banner-section">Table of Contents</div>
+                    </div>
+                </div>
+                
+                <!-- Chat Messages Container -->
+                <div class="chat-messages" id="chat-messages"></div>
+            </div>
+
+            <!-- Bottom bar for input -->
+            <div id="bottom-bar">
+                <div id="loading-bar"></div>
+                <div id="quick-actions-container"></div>
+                <input type="text" id="user-input" placeholder="Type your message..." autocomplete="off" />
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
