@@ -3,7 +3,7 @@ import json
 from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
 from notion_client import Client
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 
 # Load environment variables only in development
@@ -24,7 +24,7 @@ if not all([NOTION_API_KEY, NOTION_DATABASE_ID, OPENAI_API_KEY]):
     raise Exception("ERROR: Make sure all API keys and IDs are set in your environment variables")
 
 notion = Client(auth=NOTION_API_KEY)
-openai.api_key = OPENAI_API_KEY
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 course_map = None
 
 # --- Serve static files ---
@@ -155,15 +155,15 @@ Respond: CONTINUE or QUESTION
 """
 
     try:
-        response = openai.ChatCompletion.create(
+        completion = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": intent_prompt}],
             max_tokens=5,  # Just need one word
             temperature=0,  # Deterministic for speed
         )
         
-        result = response.choices[0].message.content.strip().upper()
-        return result if result in ['CONTINUE', 'QUESTION'] else 'QUESTION'
+        response = completion.choices[0].message.content.strip().upper()
+        return response if response in ['CONTINUE', 'QUESTION'] else 'QUESTION'
     except Exception as e:
         print(f"Intent classification error: {e}")
         return 'QUESTION'
@@ -190,18 +190,18 @@ Focus on key terms and concepts. Be concise.
 """
 
     try:
-        response = openai.ChatCompletion.create(
+        completion = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": quick_actions_prompt}],
             max_tokens=50,  # Reduced for speed
             temperature=0.3,
         )
         
-        result = response.choices[0].message.content.strip()
+        response = completion.choices[0].message.content.strip()
         
         # Quick parsing
         actions = []
-        for line in result.split('\n'):
+        for line in response.split('\n'):
             line = line.strip()
             if line and (line.startswith('-') or line.startswith('•')):
                 action = line.replace('-', '').replace('•', '').strip()
@@ -409,7 +409,7 @@ def ask_question():
     user_message = f"Context: {context}\n\nQ: {question}"
 
     try:
-        response = openai.ChatCompletion.create(
+        completion = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -421,7 +421,7 @@ def ask_question():
             frequency_penalty=0.1,
             stream=False
         )
-        return jsonify({"answer": response.choices[0].message.content})
+        return jsonify({"answer": completion.choices[0].message.content})
     except Exception as e:
         print(f"Error in ask_question: {e}")
         return jsonify({"answer": "I'm sorry, I encountered an issue. Could you try rephrasing?"})
@@ -467,7 +467,7 @@ def ask_question_stream():
 
         try:
             # Create streaming completion
-            response = openai.ChatCompletion.create(
+            stream = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -481,8 +481,8 @@ def ask_question_stream():
             )
             
             # Stream the response
-            for chunk in response:
-                if chunk.choices[0].delta.get('content') is not None:
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
                     content = chunk.choices[0].delta.content
                     # Send each chunk as Server-Sent Event
                     yield f"data: {json.dumps({'content': content})}\n\n"
