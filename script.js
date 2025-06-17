@@ -79,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Chat History Management ---
+    // --- FIXED: Chat History Management for Each Chapter ---
     function saveChatToHistory(view) {
         if (chatHistory[view]) {
             chatHistory[view] = Array.from(chatMessages.children).map(row => ({
@@ -88,33 +88,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 type: row.querySelector('.notion-content') ? 'notion' : 
                       row.querySelector('.ai-response') ? 'ai' : 'default'
             }));
+            console.log(`💾 Saved chat for ${view}:`, chatHistory[view].length, 'messages');
         }
     }
 
     function loadChatFromHistory(view) {
         chatMessages.innerHTML = '';
         if (chatHistory[view] && chatHistory[view].length > 0) {
+            console.log(`📖 Loading chat for ${view}:`, chatHistory[view].length, 'messages');
             chatHistory[view].forEach(message => {
                 chatMessages.innerHTML += message.html;
             });
             chatWindow.scrollTop = chatWindow.scrollHeight;
+        } else {
+            console.log(`📖 No chat history found for ${view}`);
         }
     }
 
     function switchToView(newView, sectionTitle = '') {
-        // Save current chat
-        saveChatToHistory(currentView);
+        console.log(`🔄 Switching from ${currentView} to ${newView}`);
+        
+        // Save current chat only if we have messages
+        if (chatMessages.children.length > 0) {
+            saveChatToHistory(currentView);
+        }
         
         // Switch to new view
+        const previousView = currentView;
         currentView = newView;
         
         // Initialize chat history for new view if it doesn't exist
         if (!chatHistory[newView]) {
             chatHistory[newView] = [];
+            console.log(`🆕 Created new chat history for ${newView}`);
         }
         
-        // Load chat for new view
-        loadChatFromHistory(newView);
+        // Only load chat if we're switching to a different view
+        if (previousView !== newView) {
+            loadChatFromHistory(newView);
+        }
         
         // Update banner
         updateBanner(newView === 'toc' ? 'toc' : 'chapter', sectionTitle);
@@ -384,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         enableQuickActions();
     }
 
-    // --- UPDATED: Generate only unique quick actions ---
+    // --- UPDATED: Generate content-specific quick actions ---
     async function generateContextualActions(sectionContent) {
         try {
             const response = await fetch(`${API_BASE_URL}/generate-quick-actions`, {
@@ -395,6 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (!response.ok) throw new Error("Quick actions generation failed");
             const data = await response.json();
+            console.log('🎯 Generated actions from server:', data.actions);
             return data.actions;
         } catch (error) {
             console.error('Quick actions generation error:', error);
@@ -407,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Always include "Move to next section" as first action, then add AI-generated ones
         const allActions = ['Move to next section', ...dynamicActions];
         
-        console.log('🎯 Generated dynamic actions:', allActions);
+        console.log('🎯 Final quick actions:', allActions);
         renderQuickActions(allActions);
     }
 
@@ -663,15 +676,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function startChapter(title) {
+        console.log(`🚀 Starting chapter: ${title}`);
+        
         // Mark that user has started a chapter
         hasStartedAnyChapter = true;
         
-        // Switch to chapter view
+        // Switch to chapter view (this will save current chat automatically)
         switchToView(title, title);
         updateCurrentChapterTitle(title);
         
-        // If this is a fresh chapter start, load content
-        if (chatHistory[title].length === 0) {
+        // If this is a fresh chapter start (no chat history), load content
+        if (!chatHistory[title] || chatHistory[title].length === 0) {
+            console.log(`📖 Fresh chapter start for ${title} - loading content`);
+            
             if (title === firstChapterTitle && firstChapterContent) {
                 console.log('🚀 Using preloaded first chapter content - instant load!');
                 currentChapterContent = firstChapterContent;
@@ -704,8 +721,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 createMessageElement('bot').innerHTML = 'Sorry, there was a problem loading the chapter.';
             }
         } else {
-            // Restore chapter state from chat history
+            // Restore chapter state from chat history - content should already be loaded
+            console.log(`📖 Resuming chapter ${title} from chat history`);
             renderChaptersList();
+            
+            // If we don't have the chapter content in memory, reload it
+            if (!currentChapterContent || chapterSections.length === 0) {
+                console.log('📡 Reloading chapter content for resumed session...');
+                try {
+                    const response = await fetch(`${API_BASE_URL}/get-chapter-content`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title }),
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        currentChapterContent = data.content;
+                        chapterSections = parseContentIntoSections(data.content);
+                    }
+                } catch (error) {
+                    console.error('Error reloading chapter content:', error);
+                }
+            }
         }
     }
     
