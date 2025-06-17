@@ -416,12 +416,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function renderDynamicQuickActions(sectionContent) {
-        const dynamicActions = await generateContextualActions(sectionContent);
-        // Always include "Move to next section" as first action, then add AI-generated ones
-        const allActions = ['Move to next section', ...dynamicActions];
-        
-        console.log('🎯 Final quick actions:', allActions);
-        renderQuickActions(allActions);
+        const currentChapter = allChapters.find(ch => ch.title === currentChapterTitle);
+        const nextChapter = allChapters.find(ch => !ch.locked && !completedChapters.includes(ch.title) && ch.title !== currentChapterTitle);
+
+        // Show quick actions for completed chapters
+        if (completedChapters.includes(currentChapterTitle)) {
+            const actions = ['Restart this chapter', 'Go to next chapter'];
+            renderQuickActions(actions);
+        } else {
+            const dynamicActions = await generateContextualActions(sectionContent);
+            const allActions = ['Move to next section', ...dynamicActions];
+            renderQuickActions(allActions);
+        }
     }
 
     function checkContinueKeywords(text) {
