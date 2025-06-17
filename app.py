@@ -169,77 +169,104 @@ Respond: CONTINUE or QUESTION
         return 'QUESTION'
 
 def generate_quick_actions(section_content):
-    """Generate unique quick actions without duplicates"""
+    """Generate content-specific quick actions based on actual content"""
     
     # Truncate content for faster processing
-    max_content_length = 1000
+    max_content_length = 1500
     if len(section_content) > max_content_length:
         section_content = section_content[:max_content_length] + "..."
     
     quick_actions_prompt = f"""
-Generate exactly 3 unique, different questions based on this content. Each must be different from the others.
+Based on this specific content, generate exactly 3 content-specific questions. Each question should be about actual terms, concepts, numbers, or facts mentioned in the content.
 
 Content: {section_content}
 
 Requirements:
-- Each question should be 2-4 words
-- No duplicate concepts or similar phrasing
-- Focus on different aspects: definitions, examples, applications
-- Avoid generic phrases like "elaborate more"
+- Use actual terms/concepts from the content (like "Lease-up Phase", "Disposition", specific numbers mentioned, etc.)
+- Format as questions starting with "What is", "Define", "How many", "When was", etc.
+- Be specific to this content, not generic
+- Keep each question under 6 words
+- Make them different from each other
 
-Format:
-1. [First unique question]
-2. [Second unique question] 
-3. [Third unique question]
+Examples of good questions:
+- "Define Lease-up Phase"
+- "What is Disposition?"
+- "How many units mentioned?"
+
+Generate exactly 3 questions:
+1.
+2.
+3.
 """
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quick_actions_prompt}],
-            max_tokens=60,
-            temperature=0.7,  # More creativity for variety
+            max_tokens=80,
+            temperature=0.3,  # Lower temperature for more focused responses
         )
         
         result = response.choices[0].message.content.strip()
+        print(f"AI generated quick actions: {result}")
         
-        # Parse the numbered format
+        # Parse the numbered format more carefully
         actions = []
-        for line in result.split('\n'):
+        lines = result.split('\n')
+        
+        for line in lines:
             line = line.strip()
-            # Look for numbered format or bullet points
-            if any(line.startswith(prefix) for prefix in ['1.', '2.', '3.', '-', '•']):
+            if not line:
+                continue
+                
+            # Look for numbered format (1., 2., 3.) or lines with content
+            if any(line.startswith(prefix) for prefix in ['1.', '2.', '3.']):
                 # Clean the action text
                 action = line
-                for prefix in ['1.', '2.', '3.', '-', '•']:
+                for prefix in ['1.', '2.', '3.']:
                     action = action.replace(prefix, '').strip()
                 
-                # Only add if it's unique and reasonable length
-                if action and len(action) <= 40 and action not in actions:
+                # Remove quotes and extra formatting
+                action = action.strip('"').strip("'").strip()
+                
+                # Only add if it's not empty and reasonable length
+                if action and len(action) <= 50 and action not in actions:
                     actions.append(action)
         
+        # If we didn't get good parsed results, try a different approach
+        if len(actions) < 2:
+            actions = []
+            # Look for any line that looks like a question
+            for line in lines:
+                line = line.strip().strip('"').strip("'")
+                if line and (line.endswith('?') or any(line.startswith(word) for word in ['What', 'Define', 'How', 'When', 'Where', 'Why'])):
+                    if len(line) <= 50 and line not in actions:
+                        actions.append(line)
+        
         # Ensure we have exactly 3 unique actions
-        fallback_actions = [
-            "What does this mean?",
-            "Give me examples", 
-            "How is this used?",
-            "Why is this important?",
+        content_specific_fallbacks = [
+            "Define key terms",
+            "Explain main concept", 
             "What are the benefits?",
+            "How does this work?",
+            "What are the steps?",
             "Explain the process"
         ]
         
         # Add fallbacks if we don't have enough unique actions
-        for fallback in fallback_actions:
+        for fallback in content_specific_fallbacks:
             if len(actions) >= 3:
                 break
             if fallback not in actions:
                 actions.append(fallback)
         
-        return actions[:3]
+        final_actions = actions[:3]
+        print(f"Final parsed actions: {final_actions}")
+        return final_actions
             
     except Exception as e:
         print(f"Quick actions generation error: {e}")
-        return ["What does this mean?", "Give me examples", "How is this used?"]
+        return ["Define key terms", "Explain main concept", "What are the benefits?"]
 
 # --- API Endpoints ---
 @app.route('/get-course-content', methods=['GET'])
@@ -391,8 +418,8 @@ def generate_quick_actions_endpoint():
         
     except Exception as e:
         print(f"Error in generate_quick_actions_endpoint: {e}")
-        # Safe fallback with unique actions
-        return jsonify({"actions": ["What does this mean?", "Give me examples", "How is this used?"]})
+        # Safe fallback with content-specific defaults
+        return jsonify({"actions": ["Define key terms", "Explain main concept", "What are the benefits?"]})
 
 @app.route('/ask-question', methods=['POST'])
 def ask_question():
