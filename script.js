@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function getApiUrl() {
         // Auto-detect if we're in development or production
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            return 'http://127.0.0.1:5000';
+            return 'http://127.0.0.1:5001';
         } else {
             // Production - use relative URLs (same domain)
             return '';
