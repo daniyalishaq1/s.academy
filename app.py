@@ -562,6 +562,6 @@ def health_check():
     return jsonify({"status": "healthy", "message": "Course API is running"})
 
 if __name__ == '__main__':
-    # Use environment port for production, 5000 for development
-    port = int(os.environ.get('PORT', 5000))
+    # Use environment port for production, 5001 for development
+    port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=False)
