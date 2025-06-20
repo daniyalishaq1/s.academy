@@ -1,0 +1,513 @@
+import os
+import json
+import config
+from flask import Flask, jsonify, request, Response, send_from_directory
+from flask_cors import CORS
+from notion_client import Client
+import openai
+from services import user_service
+from dotenv import load_dotenv
+from flask import session
+from auth import auth_bp, init_oauth, require_auth, get_current_user
+from datetime import datetime
+from services import notion_service
+from services import ai_service
+
+
+
+app = Flask(__name__, static_folder='static')
+app.secret_key = config.SECRET_KEY
+
+# Register authentication blueprint
+app.register_blueprint(auth_bp)
+
+# Initialize OAuth
+google = init_oauth(app)
+
+# CORS configuration for production
+CORS(app, origins=['*'])  # In production, you might want to restrict this
+openai.api_key = config.OPENAI_API_KEY
+
+
+# --- NEW: OpenAI Test Endpoint ---
+@app.route('/test-openai')
+def test_openai():
+    """Test OpenAI connectivity with older API version"""
+    success, result = ai_service.test_connection()
+    if success:
+        return f"""
+        <html>
+            <body>
+                <h1>OpenAI API Test</h1>
+                <p><strong>Status:</strong> Success</p>
+                <p><strong>Response:</strong> {result}</p>
+                <p><a href="/">Return to course</a></p>
+            </body>
+        </html>
+        """
+    else:
+        return f"""
+        <html>
+            <body>
+                <h1>OpenAI API Test</h1>
+                <p><strong>Status:</strong> Error</p>
+                <p><strong>Error:</strong> {result}</p>
+                <p><a href="/">Return to course</a></p>
+            </body>
+        </html>
+        """
+
+# --- ADMIN ROUTE TO VIEW USERS ---
+@app.route('/admin/users')
+def view_users():
+    """Admin route to view all users - REMOVE IN PRODUCTION"""
+    try:
+        # Get all users from MongoDB
+        from pymongo import MongoClient
+        from bson import ObjectId
+        import json
+        from datetime import datetime
+        
+        # Get users collection
+        users = user_service.get_all_users()
+        
+        # Create HTML to display users
+        html = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Users Data - Admin View</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
+                .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .user-card {{ background: #f8f9fa; padding: 20px; margin: 15px 0; border-radius: 6px; border-left: 4px solid #26BBED; }}
+                .user-email {{ font-size: 1.2rem; font-weight: bold; color: #26BBED; margin-bottom: 10px; }}
+                .user-details {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }}
+                .detail-item {{ background: white; padding: 10px; border-radius: 4px; }}
+                .detail-label {{ font-weight: bold; color: #666; font-size: 0.9rem; }}
+                .detail-value {{ color: #333; }}
+                .stats {{ background: #e8f5e8; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: center; }}
+                .json-view {{ background: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 10px; overflow-x: auto; }}
+                .json-toggle {{ background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.8rem; }}
+                .nav-links {{ margin-bottom: 20px; }}
+                .nav-links a {{ background: #26BBED; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; margin-right: 10px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="nav-links">
+                    <a href="/">← Back to Course</a>
+                    <a href="/admin/users">Refresh Users</a>
+                </div>
+                
+                <h1>🎓 Course Platform - Users Data</h1>
+                
+                <div class="stats">
+                    <h3>📊 Statistics</h3>
+                    <p><strong>Total Users:</strong> {len(users)}</p>
+                    <p><strong>Database:</strong> course_platform.users</p>
+                    <p><strong>Last Updated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                </div>
+        '''
+        
+        if not users:
+            html += '''
+                <div class="user-card">
+                    <p>No users found in the database yet.</p>
+                    <p>Users will appear here after they log in for the first time.</p>
+                </div>
+            '''
+        else:
+            for i, user in enumerate(users):
+                completed_count = len(user.get('completed_chapters', []))
+                total_time = user.get('total_time_spent', 0)
+                
+                html += f'''
+                <div class="user-card">
+                    <div class="user-email">👤 {user.get('email', 'No email')}</div>
+                    
+                    <div class="user-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Name</div>
+                            <div class="detail-value">{user.get('name', 'Not provided')}</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Google ID</div>
+                            <div class="detail-value">{user.get('google_id', 'Not available')[:20]}...</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Created At</div>
+                            <div class="detail-value">{user.get('created_at', 'Unknown')}</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Last Login</div>
+                            <div class="detail-value">{user.get('last_login', 'Never')}</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Completed Chapters</div>
+                            <div class="detail-value">{completed_count} chapters</div>
+                        </div>
+                        
+                        <div class="detail-item">
+                            <div class="detail-label">Time Spent</div>
+                            <div class="detail-value">{total_time} minutes</div>
+                        </div>
+                    </div>
+                    
+                    <button class="json-toggle" onclick="toggleJson({i})">Show Full Data</button>
+                    <div id="json-{i}" class="json-view" style="display: none;">
+                        <pre>{json.dumps(user, indent=2)}</pre>
+                    </div>
+                </div>
+                '''
+        
+        html += '''
+                <div style="margin-top: 30px; padding: 20px; background: #fff3cd; border-radius: 6px;">
+                    <h4>⚠️ Security Note</h4>
+                    <p>This admin route shows sensitive user data. In production:</p>
+                    <ul>
+                        <li>Remove this route or add proper admin authentication</li>
+                        <li>Use MongoDB Atlas interface for user management</li>
+                        <li>Implement proper admin permissions</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <script>
+                function toggleJson(index) {
+                    const element = document.getElementById('json-' + index);
+                    const button = event.target;
+                    if (element.style.display === 'none') {
+                        element.style.display = 'block';
+                        button.textContent = 'Hide Full Data';
+                    } else {
+                        element.style.display = 'none';
+                        button.textContent = 'Show Full Data';
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        '''
+        
+        return html
+        
+    except Exception as e:
+        return f'''
+        <h1>Error loading users</h1>
+        <p>Error: {str(e)}</p>
+        <p><a href="/">Return to Course</a></p>
+        '''
+
+# --- Serve static files ---
+@app.route('/')
+@require_auth
+def serve_index():
+    return send_from_directory('static', 'index.html')
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('static', filename)
+
+@app.route('/static/images/<path:filename>')
+def serve_images(filename):
+    return send_from_directory('static/images', filename)
+
+# --- API Endpoints ---
+@app.route('/get-course-content', methods=['GET'])
+@require_auth
+def get_table_of_contents():
+    """Get table of contents and preload first chapter"""
+    try:
+        # Use notion_service
+        course_map = notion_service.build_course_map(config.NOTION_DATABASE_ID)
+        toc_page_id = course_map.get("Table of contents")
+        
+        # Get all chapters in order
+        all_chapters = []
+        for title in sorted(course_map.keys()):
+            if "Chapter" in title and title != "Table of contents":
+                chapter_number = notion_service.extract_chapter_number(title)
+                if chapter_number:
+                    all_chapters.append({
+                        "title": title,
+                        "number": chapter_number,
+                        "locked": chapter_number > 1  # Only Chapter 1 is unlocked initially
+                    })
+        
+        # Sort by chapter number
+        all_chapters.sort(key=lambda x: x["number"])
+        first_chapter_title = all_chapters[0]["title"] if all_chapters else None
+        
+        # Get table of contents content
+        toc_blocks = notion_service.get_all_blocks_from_id(toc_page_id)
+        content = "\n\n".join(filter(None, [notion_service.convert_block_to_markdown(b) for b in toc_blocks]))
+        
+        # Preload first chapter content for performance
+        first_chapter_content = None
+        if first_chapter_title:
+            try:
+                print(f"Preloading first chapter: {first_chapter_title}")
+                first_chapter_content = notion_service.get_chapter_content(course_map, first_chapter_title)
+                print("First chapter preloaded successfully!")
+            except Exception as preload_error:
+                print(f"Preload error (not critical): {preload_error}")
+                first_chapter_content = None
+        
+        return jsonify({
+            "content": content, 
+            "firstChapterTitle": first_chapter_title,
+            "firstChapterContent": first_chapter_content,
+            "allChapters": all_chapters
+        })
+    except Exception as e: 
+        print(f"Error in get_table_of_contents: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/get-chapter-content', methods=['POST'])
+@require_auth
+def get_chapter_content():
+    """Get content for a specific chapter"""
+    try:
+        # Use notion_service
+        course_map = notion_service.build_course_map(NOTION_DATABASE_ID)
+        data = request.get_json()
+        chapter_title = data.get('title')
+        
+        if not chapter_title:
+            return jsonify({"error": "Chapter title is required"}), 400
+            
+        try:
+            content = notion_service.get_chapter_content(course_map, chapter_title)
+            return jsonify({"content": content})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+            
+    except Exception as e: 
+        print(f"Error in get_chapter_content: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/complete-chapter', methods=['POST'])
+@require_auth
+def complete_chapter():
+    """Mark a chapter as completed and unlock the next one"""
+    try:
+        data = request.get_json()
+        completed_chapter = data.get('chapter_title')
+        
+        # Get current user
+        current_user = get_current_user()
+        if not current_user:
+            return jsonify({"error": "User not found"}), 401
+        
+        if not completed_chapter:
+            return jsonify({"error": "Chapter title is required"}), 400
+            
+        # Extract chapter number using notion_service
+        chapter_number = notion_service.extract_chapter_number(completed_chapter)
+        if not chapter_number:
+            return jsonify({"error": "Invalid chapter format"}), 400
+        
+        # Update user's completed chapters using the user service
+        success = user_service.complete_chapter(current_user['_id'], completed_chapter)
+        if not success:
+            return jsonify({"error": "Failed to update chapter completion status"}), 500
+        
+        # Get all chapters again to determine next chapter using notion_service
+        course_map = notion_service.build_course_map(NOTION_DATABASE_ID)
+        all_chapters = []
+        for title in sorted(course_map.keys()):
+            if "Chapter" in title and title != "Table of contents":
+                chapter_num = notion_service.extract_chapter_number(title)
+                if chapter_num:
+                    all_chapters.append({
+                        "title": title,
+                        "number": chapter_num,
+                        "locked": chapter_num > (chapter_number + 1)  # Unlock up to next chapter
+                    })
+        
+        all_chapters.sort(key=lambda x: x["number"])
+        next_chapter = next((ch for ch in all_chapters if ch["number"] == chapter_number + 1), None)
+        
+        return jsonify({
+            "success": True,
+            "unlockedChapters": all_chapters,
+            "nextChapter": next_chapter
+        })
+        
+    except Exception as e:
+        print(f"Error in complete_chapter: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/classify-intent', methods=['POST'])
+@require_auth
+def classify_intent():
+    """Endpoint that determines if user wants to continue or ask a question"""
+    try:
+        data = request.get_json()
+        user_input = data.get('user_input', '').strip()
+        current_section = data.get('current_section_title', '')
+        next_section = data.get('next_section_title', '')
+        
+        if not user_input:
+            return jsonify({"error": "User input is required"}), 400
+            
+        intent = ai_service.classify_user_intent(user_input, current_section, next_section)
+        return jsonify({"intent": intent})
+        
+    except Exception as e:
+        print(f"Error in classify_intent: {e}")
+        return jsonify({"intent": "QUESTION"})  # Safe fallback
+
+@app.route('/generate-quick-actions', methods=['POST'])
+@require_auth
+def generate_quick_actions_endpoint():
+    """Endpoint that generates contextual quick action buttons"""
+    try:
+        data = request.get_json()
+        section_content = data.get('section_content', '').strip()
+        
+        if not section_content:
+            return jsonify({"error": "Section content is required"}), 400
+            
+        actions = ai_service.generate_quick_actions(section_content)
+        return jsonify({"actions": actions})
+        
+    except Exception as e:
+        print(f"Error in generate_quick_actions_endpoint: {e}")
+        # Safe fallback - still specific
+        return jsonify({"actions": ["What is the main topic?", "How does this work?", "What are the steps?"]})
+
+@app.route('/ask-question', methods=['POST'])
+@require_auth
+def ask_question():
+    """Non-streaming AI tutoring endpoint (fallback) with empathetic responses"""
+    data = request.get_json()
+    question = data.get('question')
+    context = data.get('context')
+    current_chapter_title = data.get('current_chapter_title', '')
+    
+    if not question or not context: 
+        return jsonify({"error": "Question and context required."}), 400
+
+    try:
+        answer = ai_service.ask_question(question, context, current_chapter_title)
+        return jsonify({"answer": answer})
+    except Exception as e:
+        print(f"Error in ask_question: {e}")
+        return jsonify({"answer": "I'm sorry, I encountered an issue. Could you try rephrasing?"})
+
+# --- Streaming AI Response Endpoint with Empathetic Responses ---
+@app.route('/ask-question-stream', methods=['POST'])
+@require_auth
+def ask_question_stream():
+    """Streaming AI tutoring endpoint for real-time empathetic responses"""
+    data = request.get_json()
+    question = data.get('question')
+    context = data.get('context')
+    current_chapter_title = data.get('current_chapter_title', '')
+    
+    print(f"Streaming endpoint called - Question: {question[:50]}...")
+    
+    if not question or not context: 
+        return jsonify({"error": "Question and context required."}), 400
+
+    def generate_streaming_response():
+        """Generator function for streaming OpenAI responses"""
+        try:
+            # Get streaming response from AI service
+            response = ai_service.stream_response(question, context, current_chapter_title)
+            
+            print("OpenAI API call successful, starting stream...")
+            
+            # Stream the response
+            for chunk in response:
+                if 'choices' in chunk and len(chunk['choices']) > 0:
+                    delta = chunk['choices'][0].get('delta', {})
+                    if 'content' in delta:
+                        content = delta['content']
+                        print(f"Received chunk: {content}")
+                        # Send each chunk as Server-Sent Event
+                        yield f"data: {json.dumps({'content': content})}\n\n"
+            
+            print("Streaming complete")
+            # Send completion signal
+            yield "data: [DONE]\n\n"
+            
+        except Exception as e:
+            print(f"Error in streaming: {e}")
+            yield f"data: {json.dumps({'error': 'Sorry, I encountered an issue.'})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return Response(
+        generate_streaming_response(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+    )
+
+# --- User Progress Routes ---
+@app.route('/get-user-progress', methods=['GET'])
+@require_auth
+def get_user_progress():
+    """Get current user's progress"""
+    try:
+        current_user = get_current_user()
+        if not current_user:
+            return jsonify({"error": "User not found"}), 401
+        
+        progress = user_service.get_user_progress(current_user['_id'])
+        if not progress:
+            return jsonify({"error": "Could not retrieve user progress"}), 500
+        
+        return jsonify({"user": progress})
+    except Exception as e:
+        print(f"Error getting user progress: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/save-progress', methods=['POST'])
+@require_auth
+def save_progress():
+    """Save user's current progress"""
+    try:
+        current_user = get_current_user()
+        if not current_user:
+            return jsonify({"error": "User not found"}), 401
+        
+        data = request.get_json()
+        chapter_title = data.get('chapter_title')
+        section_index = data.get('section_index', 0)
+        time_spent = data.get('time_spent', 0)
+        
+        success = user_service.update_user_progress(
+            current_user['_id'], 
+            chapter_title, 
+            section_index, 
+            time_spent
+        )
+        
+        if not success:
+            return jsonify({"error": "Failed to update progress"}), 500
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error saving progress: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# --- Health Check Endpoint ---
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Simple health check endpoint"""
+    return jsonify({"status": "healthy", "message": "Course API is running"})
+
+if __name__ == '__main__':
+    # Use environment port for production, 5000 for development
+    app.run(host='0.0.0.0', port=config.PORT, debug=config.DEBUG)

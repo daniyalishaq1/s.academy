@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const avatar = document.createElement('img');
         avatar.classList.add('avatar');
-        avatar.src = sender === 'bot' ? 'bot-avatar.png' : 'https://placehold.co/40x40/e0f7ff/333333?text=DI';
+        avatar.src = sender === 'bot' ? '/static/images/bot-avatar.png' : 'https://placehold.co/40x40/e0f7ff/333333?text=DI';
 
         const messageBubble = document.createElement('div');
         messageBubble.classList.add('message', `${sender}-message`);
