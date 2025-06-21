@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simple Chatbot</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
@@ -12,8 +12,8 @@
     <div id="full-screen-loader">
         <div class="loader-content">
             <div class="mascot-container">
-                <!-- Your Mascot GIF - Replace with your actual mascot file -->
-                <img src="mascot-gif.gif" alt="Course Mascot" class="mascot-gif" />
+                <!-- Your Mascot GIF - Updated path -->
+                <img src="/static/images/mascot-gif.gif" alt="Course Mascot" class="mascot-gif" />
                 <!-- Fallback pulse animation if GIF doesn't load -->
                 <div class="mascot-placeholder" style="display: none;">
                     <div class="pulse-animation"></div>
@@ -52,7 +52,7 @@
             <div id="chat-window">
                 <!-- Welcome Banner with Dynamic Content -->
                 <div class="welcome-banner">
-                    <img src="Chat-Banner.png" alt="Course Mascot" class="banner-mascot" />
+                    <img src="/static/images/Chat-Banner.png" alt="Course Mascot" class="banner-mascot" />
                     <div class="banner-content">
                         <div class="banner-heading">Welcome aboard! You're starting your training on:</div>
                         <div class="banner-subheading">Hylee's Intro to Multifamily</div>
@@ -72,6 +72,6 @@
             </div>
         </div>
     </div>
-    <script src="script.js"></script>
+    <script src="/static/script.js"></script>
 </body>
 </html>
