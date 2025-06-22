@@ -6,9 +6,17 @@ from bson import ObjectId
 import config
 
 # Initialize MongoDB connection
-client = MongoClient(config.MONGODB_URI)
-db = client[config.MONGODB_DB_NAME]
-users_collection = db.users
+try:
+    client = MongoClient(config.MONGODB_URI)
+    # Test the connection
+    client.admin.command('ping')
+    print("MongoDB connection successful in user_service.py")
+    db = client[config.MONGODB_DB_NAME]
+    users_collection = db.users
+except Exception as e:
+    print(f"MongoDB connection error in user_service.py: {e}")
+    # For development, you might want to raise the error to see it clearly
+    raise e
 
 def get_user_by_id(user_id):
     """Get user by ID"""

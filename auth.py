@@ -12,10 +12,18 @@ import config
 
 
 # Initialize MongoDB
-MONGODB_URI = config.MONGODB_URI
-client = MongoClient(MONGODB_URI)
-db = client['course_platform']
-users_collection = db.users
+try:
+    MONGODB_URI = config.MONGODB_URI
+    client = MongoClient(MONGODB_URI)
+    # Test the connection
+    client.admin.command('ping')
+    print("MongoDB connection successful in auth.py")
+    db = client[config.MONGODB_DB_NAME]
+    users_collection = db.users
+except Exception as e:
+    print(f"MongoDB connection error in auth.py: {e}")
+    # For development, you might want to raise the error to see it clearly
+    raise e
 
 # Create Blueprint
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
