@@ -16,14 +16,12 @@ try:
     
     if is_render:
         print("Running on Render - using special MongoDB connection options")
-        # Render-specific connection with relaxed SSL settings
+        # Render-specific connection with compatible SSL settings
         client = MongoClient(
             config.MONGODB_URI,
-            ssl=True, 
-            ssl_cert_reqs=ssl.CERT_NONE,  # Disable certificate validation
+            tls=True, 
             tlsAllowInvalidCertificates=True,  # Allow invalid certificates
             retryWrites=True,
-            w='majority',
             connectTimeoutMS=30000,
             socketTimeoutMS=30000,
             serverSelectionTimeoutMS=30000
