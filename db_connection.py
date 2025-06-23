@@ -1,94 +1,57 @@
 # db_connection.py
-from pymongo import MongoClient
-import ssl
-import config
 import os
+import ssl
+from pymongo import MongoClient
+import config
+from datetime import datetime
 
-def get_db_connection():
-    """Get MongoDB connection with proper SSL configuration for different environments"""
-    try:
-        # Detect if we're on Render
-        is_render = os.environ.get('RENDER') == 'true'
-        
-        print(f"Connecting to MongoDB... (Render environment: {is_render})")
-        
-        # Different connection options based on environment
-        if is_render:
-            # Render-specific connection options with modified SSL settings
-            client = MongoClient(
-                config.MONGODB_URI,
-                ssl=True,
-                ssl_cert_reqs=ssl.CERT_NONE,  # Disable certificate validation for Render
-                tlsAllowInvalidCertificates=True,  # Allow invalid certificates
-                connectTimeoutMS=30000,
-                socketTimeoutMS=30000,
-                serverSelectionTimeoutMS=30000
-            )
-        else:
-            # Local development connection options
-            client = MongoClient(
-                config.MONGODB_URI,
-                connectTimeoutMS=30000,
-                socketTimeoutMS=30000,
-                serverSelectionTimeoutMS=30000
-            )
-        
-        # Test the connection
-        client.admin.command('ping')
-        print("MongoDB connection successful!")
-        
-        # Return the database
-        db = client[config.MONGODB_DB_NAME]
-        return db
-        
-    except Exception as e:
-        print(f"MongoDB connection error: {e}")
-        # For development, use mock DB. For production, we might want to fail
-        if os.environ.get('ENVIRONMENT') == 'production':
-            raise e
-        else:
-            print("Using mock database for development")
-            return MockDB()
-
-class MockDB:
-    """Mock DB for testing when MongoDB is unavailable"""
-    def __getattr__(self, name):
-        print(f"Using mock collection: {name}")
-        return MockCollection(name)
-
-class MockCollection:
-    """Mock Collection that simulates basic MongoDB operations"""
-    def __init__(self, name):
-        self.name = name
-        self.data = {}
+def get_mongodb_connection():
+    """Get a MongoDB connection using the best method for the environment"""
     
-    def find_one(self, query=None, *args, **kwargs):
-        print(f"Mock DB - find_one in {self.name} with query: {query}")
-        if query and '_id' in query and str(query['_id']) == 'mock_id':
-            return {
-                "_id": "mock_id", 
-                "email": "test@hy.ly", 
-                "name": "Test User", 
-                "google_id": "12345",
-                "course_progress": {},
-                "completed_chapters": [],
-                "total_time_spent": 0,
-                "created_at": "2025-06-22"
-            }
-        return None
+    # Check if we're on Render
+    is_render = os.environ.get('RENDER', 'false').lower() == 'true'
     
-    def insert_one(self, document, *args, **kwargs):
-        print(f"Mock DB - insert_one in {self.name}: {document}")
-        class MockResult:
-            @property
-            def inserted_id(self):
-                return "mock_id"
-        return MockResult()
+    if is_render:
+        print("Running on Render - using MongoDB connection method for Render")
+        
+        # For Render, we need to modify the URI and use special connection options
+        mongo_uri = config.MONGODB_URI
+        
+        # Convert URI format if using SRV format
+        if mongo_uri.startswith('mongodb+srv://'):
+            # Extract username, password, host and database
+            srv_parts = mongo_uri.split('@')
+            credentials = srv_parts[0].replace('mongodb+srv://', '')
+            host_and_options = srv_parts[1]
+            
+            # Split host and options if present
+            if '?' in host_and_options:
+                host_part, options_part = host_and_options.split('?', 1)
+                options = f"?{options_part}"
+            else:
+                host_part = host_and_options
+                options = ""
+            
+            # Convert to standard format with specific servers
+            # This is a workaround for Render's SSL/TLS issues
+            mongo_uri = f"mongodb://{credentials}@{host_part.replace('.mongodb.net', '-shard-00-00.mongodb.net:27017,')}{host_part.replace('.mongodb.net', '-shard-00-01.mongodb.net:27017,')}{host_part.replace('.mongodb.net', '-shard-00-02.mongodb.net:27017')}/admin?ssl=true&replicaSet=atlas-lv2bm9-shard-0&authSource=admin&retryWrites=true"
+        
+        # Create client with special options for Render
+        client = MongoClient(
+            mongo_uri,
+            ssl=True,
+            ssl_cert_reqs=ssl.CERT_NONE,  # This is key for Render
+            connectTimeoutMS=30000,
+            socketTimeoutMS=30000,
+            serverSelectionTimeoutMS=30000
+        )
+    else:
+        print("Local environment - using standard MongoDB connection")
+        client = MongoClient(config.MONGODB_URI)
     
-    def update_one(self, query, update, *args, **kwargs):
-        print(f"Mock DB - update_one in {self.name}: {query} → {update}")
-        return None
+    # Test the connection
+    client.admin.command('ping')
+    print("MongoDB connection successful!")
     
-    def find(self, query=None, *args, **kwargs):
-        print(f"Mock DB - find in {self.name} with query: {query}")
-        return []
+    # Return the database
+    return client[config.MONGODB_DB_NAME]
