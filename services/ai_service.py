@@ -1,7 +1,10 @@
 # services/ai_service.py
-import openai
+from openai import OpenAI
 import config
 import re
+
+# Initialize the OpenAI client
+client = OpenAI(api_key=config.OPENAI_API_KEY)
 
 def classify_user_intent(user_input, current_section_title, next_section_title):
     """Faster intent classification with shorter prompt"""
@@ -17,7 +20,7 @@ Respond: CONTINUE or QUESTION
 """
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": intent_prompt}],
             max_tokens=5,  # Just need one word
@@ -60,7 +63,7 @@ Generate exactly 3 specific questions:
 """
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quick_actions_prompt}],
             max_tokens=100,
@@ -161,7 +164,7 @@ def ask_question(question, context, current_chapter_title=''):
     user_message = f"Current Chapter: {current_chapter_title}\nContext: {context}\n\nQ: {question}"
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -170,8 +173,7 @@ def ask_question(question, context, current_chapter_title=''):
             max_tokens=120,
             temperature=0.7,
             top_p=0.9,
-            frequency_penalty=0.1,
-            stream=False
+            frequency_penalty=0.1
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -205,7 +207,7 @@ def stream_response(question, context, current_chapter_title=''):
 
     print("Making OpenAI API call...")
     # Create streaming completion
-    return openai.ChatCompletion.create(
+    return client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -222,7 +224,7 @@ def test_connection():
     """Test OpenAI connectivity"""
     try:
         # Simple test query
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
