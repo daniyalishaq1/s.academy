@@ -1,3 +1,4 @@
+# auth.py
 import os
 import json
 from datetime import datetime
@@ -9,33 +10,97 @@ from dotenv import load_dotenv
 import config
 import ssl
 
-# Initialize MongoDB with SSL configuration that works on Render
+# Initialize MongoDB with multiple connection methods
 try:
     # Check if we're on Render
     is_render = os.environ.get('RENDER', 'false').lower() == 'true'
     
     if is_render:
-        print("Running on Render - using special MongoDB connection options")
-        # Render-specific connection with compatible SSL settings
-        client = MongoClient(
-            config.MONGODB_URI,
-            tls=True, 
-            tlsAllowInvalidCertificates=True,  # Allow invalid certificates
-            retryWrites=True,
-            connectTimeoutMS=30000,
-            socketTimeoutMS=30000,
-            serverSelectionTimeoutMS=30000
-        )
+        print("Running on Render - trying multiple MongoDB connection methods")
+        
+        # Try multiple connection methods
+        connection_options = [
+            # Method 1: Standard SRV connection with TLS options
+            {
+                "name": "Standard SRV with TLS options",
+                "options": {
+                    "tls": True,
+                    "tlsAllowInvalidCertificates": True,
+                    "retryWrites": True,
+                    "connectTimeoutMS": 30000,
+                    "socketTimeoutMS": 30000,
+                    "serverSelectionTimeoutMS": 30000
+                }
+            },
+            # Method 2: Direct connection without SRV
+            {
+                "name": "Direct connection without SRV",
+                "options": {
+                    "tls": True,
+                    "tlsAllowInvalidCertificates": True,
+                    "retryWrites": True,
+                    "connectTimeoutMS": 30000,
+                    "socketTimeoutMS": 30000,
+                    "serverSelectionTimeoutMS": 30000
+                },
+                "uri_modifier": lambda uri: uri.replace("mongodb+srv://", "mongodb://")
+            },
+            # Method 3: SSL with certificate requirements disabled
+            {
+                "name": "SSL with cert requirements disabled",
+                "options": {
+                    "ssl": True,
+                    "ssl_cert_reqs": ssl.CERT_NONE,
+                    "retryWrites": False,
+                    "connectTimeoutMS": 30000,
+                    "socketTimeoutMS": 30000,
+                    "serverSelectionTimeoutMS": 30000
+                }
+            }
+        ]
+        
+        # Try each method until one works
+        last_error = None
+        for method in connection_options:
+            try:
+                print(f"Trying MongoDB connection method: {method['name']}")
+                
+                # Apply URI modifier if specified
+                if "uri_modifier" in method:
+                    uri = method["uri_modifier"](config.MONGODB_URI)
+                    print(f"Modified URI: {uri.split('@')[0]}@***")
+                else:
+                    uri = config.MONGODB_URI
+                
+                # Create client with options
+                client = MongoClient(uri, **method["options"])
+                
+                # Test connection
+                client.admin.command('ping')
+                print(f"MongoDB connection successful with method: {method['name']}")
+                
+                # Get database
+                db = client[config.MONGODB_DB_NAME]
+                users_collection = db.users
+                
+                # Exit the loop if connection works
+                break
+                
+            except Exception as e:
+                print(f"Connection method failed: {method['name']} - {e}")
+                last_error = e
+                continue
+        
+        # If we've tried all methods and still have an error, raise it
+        if last_error and 'users_collection' not in locals():
+            raise last_error
     else:
         # Standard connection for local development
         print("Local environment - using standard MongoDB connection")
         client = MongoClient(config.MONGODB_URI)
-    
-    # Test the connection
-    client.admin.command('ping')
-    print("MongoDB connection successful in auth.py")
-    db = client[config.MONGODB_DB_NAME]
-    users_collection = db.users
+        db = client[config.MONGODB_DB_NAME]
+        users_collection = db.users
+        
 except Exception as e:
     print(f"MongoDB connection error in auth.py: {e}")
     
