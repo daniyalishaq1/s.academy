@@ -30,6 +30,12 @@ CORS(app, origins=['*'])  # In production, you might want to restrict this
 # Initialize OpenAI
 openai.api_key = config.OPENAI_API_KEY
 
+@app.route('/diagnose/mongodb')
+def diagnose_mongodb():
+    """Diagnostic endpoint for MongoDB connections"""
+    from mongodb_diagnostic import test_mongodb_connections
+    return jsonify(test_mongodb_connections())
+
 # --- Health Check Endpoint ---
 @app.route('/health', methods=['GET'])
 def health_check():
