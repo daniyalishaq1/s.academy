@@ -1,5 +1,3 @@
-# Add this to app.py or create a new file called diagnostic_routes.py
-
 @app.route('/diagnose/mongodb', methods=['GET'])
 def diagnose_mongodb():
     """Diagnostic endpoint for MongoDB connection"""
